@@ -40,7 +40,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModelArguments:
     """
-    关于模型的参数
+    规定了模型相关的选项:
+        - model_name_or_path: 加载已有模型权重  (继续训练用)
+        - config_name: 加载配置文件初始化随机参数 (从零训练用)
+        - tokenizer_name: 分词器路径
+        - torch_dtype: 数据类型(bfloat16/float16/float32)
     """
 
     model_name_or_path: Optional[str] = field(
@@ -52,7 +56,7 @@ class ModelArguments:
         },
     )
     config_name: Optional[str] = field(
-        default=None, metadata={"help": "预训练使用，Config 文件地址"}
+        default=None, metadata={"help": "预训练使用 Config 文件地址"}
     )
     tokenizer_name: Optional[str] = field(
         default=None, metadata={"help": "预训练 Tokenizer 地址"}
@@ -67,11 +71,17 @@ class ModelArguments:
         },
     )
 
+# ==============================================================================
+# 📦 模块一：定义“点菜单” (接收外部 .sh 脚本传来的参数)
+# ==============================================================================
 
 @dataclass
 class DataTrainingArguments:
     """
-    关于训练的参数
+    规定数据集相关的训练参数
+        - train_files: Optional[List[str]]   # 训练数据文件路径列表
+        - block_size: Optional[int]          # 文本块长度
+        - preprocessing_num_workers: Optional[int]  # 数据预处理线程数
     """
 
     train_files: Optional[List[str]]  = field(default=None, metadata={"help": "训练数据路径"})
@@ -90,22 +100,25 @@ class DataTrainingArguments:
 
                 
 def main():
-
-    # 加载脚本参数
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    #  将pretrain.sh命令行参数解析成三个对象
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments)) 
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+#==============================================================================
+# 🕵️‍♂️ 模块二：装上“监控摄像头”与“行车记录仪” (日志与大屏监控)
+# ==============================================================================
 
     # 初始化 SwanLab
     swanlab.init(project="pretrain", experiment_name="from_scrach")
     
-    # 设置日志
+    # 设置终端文本日志
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
-    # 将日志级别设置为 INFO
+    # 统一日志级别设置为 INFO
     transformers.utils.logging.set_verbosity_info()
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
@@ -114,7 +127,6 @@ def main():
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
 
-    # 训练整体情况记录
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
@@ -134,10 +146,13 @@ def main():
                 f"从 {last_checkpoint}恢复训练"
             )
 
-    # 设置随机数种子.
+    # 设置随机数种子，保证结果可以复现
     set_seed(training_args.seed)
 
-    # 初始化模型
+# ==============================================================================
+# 🧠 模块三：召唤“大脑”与“密码本” (模型与分词器初始化)
+# ==============================================================================
+    # 初始化模型 ： 优先从 config_name 加载，进行随机初始化；如果没有，则从 model_name_or_path 加载预训练权重
     if model_args.config_name is not None:
         # from scrach
         config = AutoConfig.from_pretrained(model_args.config_name)
@@ -157,40 +172,57 @@ def main():
         logger.error("config_name 和 model_name_or_path 不能均为空")
         raise ValueError("config_name 和 model_name_or_path 不能均为空")
 
-    # 初始化 Tokenizer
+    # 初始化 Tokenizer 分词器
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name)
     logger.info("完成 tokenzier 加载")
     logger.info(f"tokenzier 配置地址：{model_args.tokenizer_name}")
 
-    # 加载预训练数据
-    ds = load_dataset('json', data_files=data_args.train_files)
+# ==============================================================================
+# 🔪 模块四：数据预处理的“暴力美学” (查字典与无缝切块)
+# ==============================================================================
+    # 加载预训练数据 ds,然后使用加载好的tokenizer中 map函数对数据集 ds 进行处理，最后进行文本切块
+    ds = load_dataset('json', data_files=data_args.train_files) # ds: Huggingface Datasetdict
     logger.info("完成训练集加载")
     logger.info(f"训练集地址：{data_args.train_files}")
     logger.info(f'训练文件总数:{len(ds["train"])}')
     # logger.info(f"训练集采样：{ds["train"][0]}")
-
-    # 文本 tokenize
     column_names = list(ds["train"].features)
     logger.info('训练集特征：', column_names)
-    text_column_name = "text" if "text" in column_names else column_names[0]
+    text_column_name = "text" if "text" in column_names else column_names[0] # 有则使用text列，否则使用第一列
+    
+    """
+    仅主进程数据预处理：
+        - 定义 tokenize_function 函数，使用 tokenizer 对文本进行编码
+        - map 函数加载数据集并行处理
 
-    # tokenize 函数
-    def tokenize_function(examples):
+    输入数据集ds, 处理完成后数据集格式：分别是文本 tokenize 之后的数值序列和注意力掩码（标识是否 padding)
+                {
+                "input_ids": [[...], [...], [...]],
+                "attention_mask": [[...], [...], [...]]
+                }
+                
+    """
+    def tokenize_function(examples): # examples: {"text": [...], ...}  (原始数据集格式)
         output = tokenizer([item for item in examples[text_column_name]])
         return output
-
-    # 仅主进程进行数据预处理
-    with training_args.main_process_first(desc="dataset map tokenization"):
+    with training_args.main_process_first(desc="dataset map tokenization"): # 防多卡重复
         tokenized_datasets = ds.map(
             tokenize_function,
             batched=True,
-            num_proc=data_args.preprocessing_num_workers,
-            remove_columns=column_names,
-            load_from_cache_file=True,
+            num_proc=data_args.preprocessing_num_workers, # 10个CPU线程批量处理
+            remove_columns=column_names, # 删除原文本列，防止OOM
+            load_from_cache_file=True, # 使用缓存文件加速重复运行
             desc="Running tokenizer on dataset"
-        )
+        ) 
 
-    # 文本切块
+    """ 
+    CLM 任务（根据上下文预测下一个 token),得到训练数据集  train_dataset
+    - 拼接文本
+    - 按 block_size 长度切块
+    """
+    # 最终确定训练时使用的文本块长度 block_size
+    # - case 1：外部没有指定 block_size，则默认使用 tokenizer 的 model_max_length (最大1024)
+    # - case 2: 外部传值 block_size （自定义）
     if data_args.block_size is None:
         block_size = tokenizer.model_max_length
         if block_size > 1024:
@@ -206,23 +238,24 @@ def main():
             )
         block_size = min(data_args.block_size, tokenizer.model_max_length)
 
+    
     def group_texts(examples):
-        # 将文本段拼接起来
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
-        # 计算拼起来的整体长度
+        # 拼接：将 batch 中的多个文本样本拼接成一个连续的长序列，并且计算总token
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()} # 字典推导式： tokenized_datasets.keys() = ["input_ids", "attention_mask"]
         total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # 如果长度太长，进行分块
+        # 分块：将拼接后到长序列按照block_size分块
         if total_length >= block_size:
-            total_length = (total_length // block_size) * block_size
+            total_length = (total_length // block_size) * block_size # 向下取整到 block_size 的整数倍
         result = {
             k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-            for k, t in concatenated_examples.items()
+            for k, t in concatenated_examples.items() # 列表推导式
         }    
-        result["labels"] = result["input_ids"].copy()
+        # CLM任务中，labels（正确答案） 就是 input_ids 的一个副本（深拷贝），模型会根据 input_ids 预测下一个 token，计算 loss 时会将 labels 与模型输出对比
+        result["labels"] = result["input_ids"].copy() # 自监督学习 = 每个block内部自己内部做 next-token prediction
         return result
 
     with training_args.main_process_first(desc="文本分块"):
-        lm_datasets = tokenized_datasets.map(
+        lm_datasets = tokenized_datasets.map( 
             group_texts,
             batched=True,
             num_proc=data_args.preprocessing_num_workers,
@@ -233,6 +266,9 @@ def main():
         logger.info("完成数据预处理")
         train_dataset = lm_datasets["train"]
     
+# ==============================================================================
+# 🚀 模块五：请出“大管家”一键代打 (Trainer 控制显卡与训练循环)
+# ==============================================================================    
     logger.info("初始化 Trainer")
     trainer = Trainer(
         model=model,
@@ -251,7 +287,7 @@ def main():
 
     logger.info("开始训练")
     train_result = trainer.train(resume_from_checkpoint=checkpoint)
-    trainer.save_model() 
+    trainer.save_model() # 保存结果权重到 output_dir 指定的路径
 
 if __name__ == "__main__":
     main()

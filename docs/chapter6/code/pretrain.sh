@@ -1,9 +1,37 @@
+# ==============================================================================
+# 🚀 Qwen-1.5B 分布式预训练启动脚本 (双卡满血版)
+# 
+# 核心配置说明:
+# 1. 硬件环境: 双卡 RTX 3090/4090 (CUDA_VISIBLE_DEVICES=0,1)
+# 2. 显存优化: DeepSpeed ZeRO-2 + bf16 + 梯度检查点
+# 3. 批次大小: 8(单卡BS) * 8(梯度累积) * 2(GPU数) = 128 (Global Batch Size)
+# ==============================================================================
+
+
+# 1. 设置GPU环境变量
+#    ↓
+# 2. DeepSpeed启动 pretrain.py
+#    ↓
+# 3. pretrain.py接收所有参数
+#    ↓
+# 4. 加载模型配置和tokenizer
+#    ↓
+# 5. 加载训练数据
+#    ↓
+# 6. 初始化Trainer
+#    ↓
+# 7. 开始分布式训练
+#    ↓
+# 8. 定期保存checkpoint和日志
+#    ↓
+# 9. 训练完成，保存最终模型
+
 CUDA_VISIBLE_DEVICES=0,1
 
 deepspeed pretrain.py \
-    --config_name autodl-tmp/qwen-1.5b \
-    --tokenizer_name autodl-tmp/qwen-1.5b \
-    --train_files autodl-tmp/dataset/pretrain_data/mobvoi_seq_monkey_general_open_corpus_small.jsonl \
+    --config_name /root/autodl-tmp/Qwen2.5-1.5B \
+    --tokenizer_name /root/autodl-tmp/Qwen2.5-1.5B \
+    --train_files sftp://root@connect.nmb2.seetacloud.com:41063/root/autodl-tmp/datasets/pretrain/mobvoi_small_clean.jsonl \
     --per_device_train_batch_size 16 \
     --gradient_accumulation_steps 4 \
     --do_train \

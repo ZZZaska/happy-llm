@@ -1,5 +1,5 @@
 '''
-SFT 脚本
+SFT 脚本：使用贝壳开源的 BelleGroup 数据集进行 SFT
 '''
 
 import logging
