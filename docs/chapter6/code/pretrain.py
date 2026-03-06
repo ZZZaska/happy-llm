@@ -187,7 +187,7 @@ def main():
     logger.info(f'训练文件总数:{len(ds["train"])}')
     # logger.info(f"训练集采样：{ds["train"][0]}")
     column_names = list(ds["train"].features)
-    logger.info('训练集特征：', column_names)
+    logger.info(f'训练集特征：{column_names}')
     text_column_name = "text" if "text" in column_names else column_names[0] # 有则使用text列，否则使用第一列
     
     """
@@ -273,7 +273,7 @@ def main():
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset= IterableWrapper(train_dataset),
+        train_dataset= train_dataset, # Trainer支持的数据类型，匹配前面预处理得到的 train_dataset（Dataset格式）
         tokenizer=tokenizer,
         data_collator=default_data_collator
     )
