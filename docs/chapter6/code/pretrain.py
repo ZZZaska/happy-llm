@@ -7,9 +7,22 @@ import math
 import os
 import sys
 from dataclasses import dataclass, field
-from torchdata.datapipes.iter import IterableWrapper
+# from torchdata.datapipes.iter import IterableWrapper
 from itertools import chain
 import deepspeed
+import contextlib
+# =========================================================
+# 🧙‍♂️ 强制封印 DeepSpeed 的 no_sync 报错
+# 因为 DeepSpeed 自己会处理梯度累积，不需要 Trainer 干涉
+# =========================================================
+@contextlib.contextmanager
+def dummy_no_sync(self):
+    yield  # 什么都不做，直接放行
+    
+# 替换掉底层会报错的那个函数
+deepspeed.runtime.engine.DeepSpeedEngine.no_sync = dummy_no_sync
+# =========================================================
+
 from typing import Optional,List
 
 import datasets
@@ -30,7 +43,8 @@ from transformers import (
 import datetime
 from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
-import swanlab
+# import swanlab
+from swanlab.integration.huggingface import SwanLabCallback # 不受版本影响的接口
 
 
 logger = logging.getLogger(__name__)
@@ -109,7 +123,8 @@ def main():
 # ==============================================================================
 
     # 初始化 SwanLab
-    swanlab.init(project="pretrain", experiment_name="from_scrach")
+    # swanlab.init(project="pretrain", experiment_name="from_scrach")
+    swanlab_callback = SwanLabCallback(project="pretrain", experiment_name="from_scrach")
     
     # 设置终端文本日志
     logging.basicConfig(
@@ -172,6 +187,10 @@ def main():
         logger.error("config_name 和 model_name_or_path 不能均为空")
         raise ValueError("config_name 和 model_name_or_path 不能均为空")
 
+    # 防止 DeepSpeed + Checkpointing 导致计算图断裂
+    if training_args.gradient_checkpointing:
+        model.enable_input_require_grads()
+    
     # 初始化 Tokenizer 分词器
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name)
     logger.info("完成 tokenzier 加载")
@@ -269,13 +288,24 @@ def main():
 # ==============================================================================
 # 🚀 模块五：请出“大管家”一键代打 (Trainer 控制显卡与训练循环)
 # ==============================================================================    
+    # # ZeRO-2：解决 Deepspeed Nonetype 报错问题 -- 强制注入兼容性参数（依然报错
+    # if training_args.gradient_checkpointing:
+    #     training_args.gradient_checkpointing_kwargs = {"use_reentrant": True}
+    
+    # ZeRO-3: 解决 Deepspeed Nonetype 报错问题
+    if training_args.gradient_checkpointing:
+        model.enable_input_require_grads()
+        training_args.gradient_checkpointing_kwargs = {"use_reentrant": False} 
+        model.config.use_cache = False
+    
     logger.info("初始化 Trainer")
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset= train_dataset, # Trainer支持的数据类型，匹配前面预处理得到的 train_dataset（Dataset格式）
         tokenizer=tokenizer,
-        data_collator=default_data_collator
+        data_collator=default_data_collator,
+        callbacks=[swanlab_callback] # 集成 SwanLab 监控训练过程
     )
 
     # 从 checkpoint 加载

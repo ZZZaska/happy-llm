@@ -32,8 +32,8 @@ deepspeed pretrain.py \
     --config_name /root/autodl-tmp/Qwen2.5-1.5B \
     --tokenizer_name /root/autodl-tmp/Qwen2.5-1.5B \
     --train_files /root/autodl-tmp/datasets/pretrain/mobvoi_small_clean.jsonl \
-    --per_device_train_batch_size 8 \
-    --gradient_accumulation_steps 8 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 32 \
     --do_train \
     --output_dir /root/autodl-tmp/output/pretrain \
     --evaluation_strategy  no \
@@ -50,8 +50,8 @@ deepspeed pretrain.py \
     --seed 12 \
     --block_size 2048 \
     --bf16 \
-    --gradient_checkpointing \
-    --deepspeed ./ds_config_zero2.json \
-    --report_to swanlab
+    --gradient_checkpointing True \
+    --deepspeed "./ds_config_zero3.json" \
+    --report_to none \
     
     # --resume_from_checkpoint ${output_model}/checkpoint-20400 \
