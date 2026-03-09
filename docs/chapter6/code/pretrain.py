@@ -10,18 +10,18 @@ from dataclasses import dataclass, field
 # from torchdata.datapipes.iter import IterableWrapper
 from itertools import chain
 import deepspeed
-import contextlib
-# =========================================================
-# 🧙‍♂️ 强制封印 DeepSpeed 的 no_sync 报错
-# 因为 DeepSpeed 自己会处理梯度累积，不需要 Trainer 干涉
-# =========================================================
-@contextlib.contextmanager
-def dummy_no_sync(self):
-    yield  # 什么都不做，直接放行
+# import contextlib
+# # =========================================================
+# # 🧙‍♂️ 强制封印 DeepSpeed 的 no_sync 报错
+# # 因为 DeepSpeed 自己会处理梯度累积，不需要 Trainer 干涉
+# # =========================================================
+# @contextlib.contextmanager
+# def dummy_no_sync(self):
+#     yield  # 什么都不做，直接放行
     
-# 替换掉底层会报错的那个函数
-deepspeed.runtime.engine.DeepSpeedEngine.no_sync = dummy_no_sync
-# =========================================================
+# # 替换掉底层会报错的那个函数
+# deepspeed.runtime.engine.DeepSpeedEngine.no_sync = dummy_no_sync
+# # =========================================================
 
 from typing import Optional,List
 
@@ -299,16 +299,16 @@ def main():
     #     model.config.use_cache = False
     
     # 回退方案：同时兼容 ZeRO-2 和 ZeRO-3 的设置，防止 DeepSpeed + Checkpointing 导致计算图断裂
-    if training_args.gradient_checkpointing:
-        model.config.use_cache = False
-        model.enable_input_require_grads()
-        training_args.gradient_checkpointing_kwargs = {"use_reentrant": True}
+    # if training_args.gradient_checkpointing:
+    #     model.config.use_cache = False
+    #     # model.enable_input_require_grads()
+    #     training_args.gradient_checkpointing_kwargs = {"use_reentrant": True}
     
-    # 强行解除 Qwen 词嵌入和输出层的权重共享！
-    if getattr(model.config, "tie_word_embeddings", False):
-        logger.info("🚀 正在强行切断 Tied Weights，拯救 DeepSpeed 逻辑死锁...")
-        model.lm_head.weight = torch.nn.Parameter(model.lm_head.weight.clone())
-        model.config.tie_word_embeddings = False
+    # # 强行解除 Qwen 词嵌入和输出层的权重共享！
+    # if getattr(model.config, "tie_word_embeddings", False):
+    #     logger.info("🚀 正在强行切断 Tied Weights，拯救 DeepSpeed 逻辑死锁...")
+    #     model.lm_head.weight = torch.nn.Parameter(model.lm_head.weight.clone())
+    #     model.config.tie_word_embeddings = False
 
 
     logger.info("初始化 Trainer")

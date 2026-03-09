@@ -3,11 +3,7 @@
         "enabled": "auto"
     },
     "zero_optimization": {
-        "stage": 2,
-        "allgather_partitions": true,
-        "overlap_comm": true,
-        "reduce_scatter": true,
-        "contiguous_gradients": true,
+        "stage": 1,
         "ignore_unused_parameters": true
     },
     "gradient_accumulation_steps": "auto",
