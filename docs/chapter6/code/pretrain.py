@@ -292,12 +292,25 @@ def main():
     # if training_args.gradient_checkpointing:
     #     training_args.gradient_checkpointing_kwargs = {"use_reentrant": True}
     
-    # ZeRO-3: 解决 Deepspeed Nonetype 报错问题
-    if training_args.gradient_checkpointing:
-        model.enable_input_require_grads()
-        training_args.gradient_checkpointing_kwargs = {"use_reentrant": False} 
-        model.config.use_cache = False
+    # # ZeRO-3: 解决 Deepspeed Nonetype 报错问题
+    # if training_args.gradient_checkpointing:
+    #     model.enable_input_require_grads()
+    #     training_args.gradient_checkpointing_kwargs = {"use_reentrant": False} 
+    #     model.config.use_cache = False
     
+    # 回退方案：同时兼容 ZeRO-2 和 ZeRO-3 的设置，防止 DeepSpeed + Checkpointing 导致计算图断裂
+    if training_args.gradient_checkpointing:
+        model.config.use_cache = False
+        model.enable_input_require_grads()
+        training_args.gradient_checkpointing_kwargs = {"use_reentrant": True}
+    
+    # 强行解除 Qwen 词嵌入和输出层的权重共享！
+    if getattr(model.config, "tie_word_embeddings", False):
+        logger.info("🚀 正在强行切断 Tied Weights，拯救 DeepSpeed 逻辑死锁...")
+        model.lm_head.weight = torch.nn.Parameter(model.lm_head.weight.clone())
+        model.config.tie_word_embeddings = False
+
+
     logger.info("初始化 Trainer")
     trainer = Trainer(
         model=model,

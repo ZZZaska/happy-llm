@@ -50,8 +50,8 @@ deepspeed pretrain.py \
     --seed 12 \
     --block_size 2048 \
     --bf16 \
-    --gradient_checkpointing True \
-    --deepspeed "./ds_config_zero3.json" \
+    --gradient_checkpointing \
+    --deepspeed "./ds_config_zero2.json" \
     --report_to none \
     
     # --resume_from_checkpoint ${output_model}/checkpoint-20400 \
