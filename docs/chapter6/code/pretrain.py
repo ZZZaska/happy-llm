@@ -174,13 +174,13 @@ def main():
         logger.warning("你正在从零初始化一个模型")
         logger.info(f"模型参数配置地址：{model_args.config_name}")
         logger.info(f"模型参数：{config}")
-        model = AutoModelForCausalLM.from_config(config,trust_remote_code=True)
+        model = AutoModelForCausalLM.from_config(config,trust_remote_code=True,torch_dtype=torch.bfloat16)# 强制以纯血 BF16 初始化，直接砍掉一半显存
         n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
         logger.info(f"预训练一个新模型 - Total size={n_params/2**20:.2f}M params")
     elif model_args.model_name_or_path is not None:
         logger.warning("你正在初始化一个预训练模型")
         logger.info(f"模型参数地址：{model_args.model_name_or_path}")
-        model = AutoModelForCausalLM.from_pretrained(model_args.model_name_or_path,trust_remote_code=True)
+        model = AutoModelForCausalLM.from_pretrained(model_args.model_name_or_path,trust_remote_code=True,torch_dtype=torch.bfloat16)
         n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
         logger.info(f"继承一个预训练模型 - Total size={n_params/2**20:.2f}M params")
     else:
