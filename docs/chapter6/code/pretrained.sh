@@ -15,6 +15,7 @@ torchrun --nproc_per_node=2 pretrain.py \
     --train_files /root/autodl-tmp/datasets/pretrain/mobvoi_small_clean.jsonl \
     --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 64 \
+    --optim "adamw_8bit" \
     --do_train \
     --output_dir /root/autodl-tmp/output/pretrain \
     --evaluation_strategy  no \
@@ -31,4 +32,5 @@ torchrun --nproc_per_node=2 pretrain.py \
     --seed 12 \
     --block_size 2048 \
     --bf16 \
+    --gradient_checkpointing \
     --report_to none

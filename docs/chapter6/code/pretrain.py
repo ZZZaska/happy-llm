@@ -187,9 +187,9 @@ def main():
         logger.error("config_name 和 model_name_or_path 不能均为空")
         raise ValueError("config_name 和 model_name_or_path 不能均为空")
 
-    # 防止 DeepSpeed + Checkpointing 导致计算图断裂
-    if training_args.gradient_checkpointing:
-        model.enable_input_require_grads()
+    # # 防止 DeepSpeed + Checkpointing 导致计算图断裂
+    # if training_args.gradient_checkpointing:
+    #     model.enable_input_require_grads()
     
     # 初始化 Tokenizer 分词器
     tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name)
@@ -309,6 +309,10 @@ def main():
     #     logger.info("🚀 正在强行切断 Tied Weights，拯救 DeepSpeed 逻辑死锁...")
     #     model.lm_head.weight = torch.nn.Parameter(model.lm_head.weight.clone())
     #     model.config.tie_word_embeddings = False
+
+    if training_args.gradient_checkpointing:
+        model.config.use_cache = False
+        # 把 use_reentrant 删掉，或者保持默认，不要乱加任何 DeepSpeed 的补丁了！
 
 
     logger.info("初始化 Trainer")
